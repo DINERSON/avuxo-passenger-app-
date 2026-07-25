@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../services/auth_service.dart';
+import 'login_screen.dart';
 import 'otp_screen.dart';
 
 class RegisterScreen extends StatefulWidget {
@@ -20,6 +21,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   bool loading = false;
   bool hidePassword = true;
+  static const String _tooManyOtpRequestsMessage =
+      'Muitas tentativas de envio. Aguarde alguns minutos e tente novamente.';
 
   // Evita tentar criar a mesma conta duas vezes
   // quando o Firebase cria a conta, mas o OTP demora ou falha.
@@ -102,8 +105,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
       return 'Sem conexão. Verifique sua internet.';
     }
 
-    if (lowerText.contains('too-many-requests')) {
-      return 'Muitas tentativas. Aguarde um pouco e tente novamente.';
+    if (lowerText.contains('17010') ||
+        lowerText.contains('too-many-requests') ||
+        lowerText.contains('error_too_many_requests') ||
+        lowerText.contains('too many requests') ||
+        lowerText.contains('excesso de tentativas') ||
+        lowerText.contains('muitas tentativas')) {
+      return _tooManyOtpRequestsMessage;
     }
 
     if (lowerText.contains('user-disabled')) {
@@ -220,6 +228,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
   void _goBack() {
     if (loading || !mounted) return;
     Navigator.pop(context);
+  }
+
+  void _openLogin() {
+    if (loading || !mounted) return;
+
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const LoginScreen(),
+      ),
+    );
   }
 
   @override
@@ -437,7 +456,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             ),
                           ),
                           TextButton(
-                            onPressed: loading ? null : _goBack,
+                            onPressed: loading ? null : _openLogin,
                             child: const Text(
                               'Entrar',
                               style: TextStyle(

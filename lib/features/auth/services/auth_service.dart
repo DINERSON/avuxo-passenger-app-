@@ -10,10 +10,19 @@ class AuthService {
   static const String _isLoggedInKey = 'is_logged_in';
   static const String _uidKey = 'uid';
   static const String _pendingUserNameKey = 'pending_user_name';
+  static const String _tooManyOtpRequestsMessage =
+      'Muitas tentativas de envio. Aguarde alguns minutos e tente novamente.';
 
   static User? get currentUser => _auth.currentUser;
 
   static Stream<User?> get authStateChanges => _auth.authStateChanges();
+
+  static String authErrorMessage(
+    FirebaseAuthException error, {
+    required String fallback,
+  }) {
+    return _firebaseErrorMessage(error, fallback: fallback);
+  }
 
   static String _firebaseErrorMessage(
     FirebaseAuthException error, {
@@ -21,12 +30,17 @@ class AuthService {
   }) {
     final message = error.message?.trim();
     final code = error.code.trim();
+    final lowerCode = code.toLowerCase();
 
-    switch (code) {
+    if (_isTooManyOtpRequests(code: lowerCode, message: message)) {
+      return _tooManyOtpRequestsMessage;
+    }
+
+    switch (lowerCode) {
       case 'invalid-phone-number':
         return 'Número de telefone inválido.';
       case 'too-many-requests':
-        return 'Muitas tentativas. Aguarde um pouco e tente novamente.';
+        return _tooManyOtpRequestsMessage;
       case 'network-request-failed':
         return 'Falha de conexão. Verifique sua internet.';
       case 'invalid-verification-code':
@@ -73,6 +87,41 @@ class AuthService {
 
         return fallback;
     }
+  }
+
+  static bool _isTooManyOtpRequests({
+    required String code,
+    String? message,
+  }) {
+    final lowerMessage = message?.toLowerCase() ?? '';
+
+    return code == '17010' ||
+        code == 'too-many-requests' ||
+        code == 'error_too_many_requests' ||
+        lowerMessage.contains('17010') ||
+        lowerMessage.contains('too-many-requests') ||
+        lowerMessage.contains('error_too_many_requests') ||
+        lowerMessage.contains('too many requests') ||
+        lowerMessage.contains('excesso de tentativas') ||
+        lowerMessage.contains('muitas tentativas');
+  }
+
+  static String _genericOtpErrorMessage(
+    Object error, {
+    required String fallback,
+  }) {
+    final lower = error.toString().toLowerCase();
+
+    if (lower.contains('17010') ||
+        lower.contains('too-many-requests') ||
+        lower.contains('error_too_many_requests') ||
+        lower.contains('too many requests') ||
+        lower.contains('excesso de tentativas') ||
+        lower.contains('muitas tentativas')) {
+      return _tooManyOtpRequestsMessage;
+    }
+
+    return fallback;
   }
 
   static Future<void> saveLoginSession() async {
@@ -241,8 +290,13 @@ class AuthService {
           fallback: 'Erro ao enviar código.',
         ),
       );
-    } catch (_) {
-      onError('Erro ao enviar código. Tente novamente.');
+    } catch (e) {
+      onError(
+        _genericOtpErrorMessage(
+          e,
+          fallback: 'Erro ao enviar código. Tente novamente.',
+        ),
+      );
     }
   }
 
@@ -410,24 +464,25 @@ class AuthService {
       throw Exception('Informe sua senha.');
     }
 
-    try {
-      final result = await _auth.signInWithEmailAndPassword(
-        email: cleanEmail,
-        password: cleanPassword,
-      );
+    final result = await _auth.signInWithEmailAndPassword(
+      email: cleanEmail,
+      password: cleanPassword,
+    );
 
-      await result.user?.reload();
-      await saveLoginSession();
+    await result.user?.reload();
+    await saveLoginSession();
 
-      return result;
-    } on FirebaseAuthException catch (e) {
-      throw Exception(
-        _firebaseErrorMessage(
-          e,
-          fallback: 'Erro ao entrar.',
-        ),
-      );
+    return result;
+  }
+
+  static Future<void> sendPasswordResetEmail(String email) async {
+    final cleanEmail = email.trim();
+
+    if (cleanEmail.isEmpty) {
+      throw Exception('Informe seu e-mail.');
     }
+
+    await _auth.sendPasswordResetEmail(email: cleanEmail);
   }
 
   static Future<void> logout() async {
