@@ -93,13 +93,7 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   bool _isValidBrazilPhone(String rawPhone) {
-    final digits = rawPhone.replaceAll(RegExp(r'[^0-9]'), '');
-
-    if (digits.startsWith('55')) {
-      return digits.length == 12 || digits.length == 13;
-    }
-
-    return digits.length == 10 || digits.length == 11;
+    return AuthService.isValidBrazilPhone(rawPhone);
   }
 
   Future<void> _sendOtp() async {
@@ -139,6 +133,7 @@ class _LoginScreenState extends State<LoginScreen> {
         onCodeSent: (verificationId) {
           if (!mounted) return;
 
+          _msg('Código enviado.');
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(
@@ -156,7 +151,7 @@ class _LoginScreenState extends State<LoginScreen> {
       );
     } catch (_) {
       if (mounted) {
-        _msg('Erro ao enviar código. Tente novamente.');
+        _msg('Não foi possível enviar SMS. Tente novamente mais tarde.');
       }
     } finally {
       if (mounted) {

@@ -44,6 +44,9 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
     verificationId = widget.verificationId.trim();
     phone = AuthService.normalizeBrazilPhone(widget.phone);
     _startTimer();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _msg('Código enviado.');
+    });
   }
 
   @override
@@ -154,15 +157,8 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
   });
 
   try {
-    // 1) Confirma o OTP no Firebase.
-    // Isso é o que libera a sessão real do app.
-    await AuthService.verifyOtp(
-      verificationId: verificationId,
-      smsCode: code,
-      phone: phone,
-    );
-
-    // 2) Confirma também no backend, se o seu backend estiver usando token próprio.
+    // O repositório confirma o OTP uma vez no Firebase e depois cria a sessão
+    // correspondente no backend.
     final result = await ref.read(authRepositoryProvider).verifyOtp(
           verificationId: verificationId,
           otp: code,

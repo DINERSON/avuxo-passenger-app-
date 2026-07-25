@@ -66,13 +66,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   }
 
   bool _isValidBrazilPhone(String rawPhone) {
-    final digits = rawPhone.replaceAll(RegExp(r'[^0-9]'), '');
-
-    if (digits.startsWith('55')) {
-      return digits.length == 12 || digits.length == 13;
-    }
-
-    return digits.length == 10 || digits.length == 11;
+    return AuthService.isValidBrazilPhone(rawPhone);
   }
 
   String _cleanErrorMessage(Object error) {
@@ -138,6 +132,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       onCodeSent: (verificationId) {
         if (!mounted) return;
 
+        _msg('Código enviado.');
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
@@ -150,7 +145,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       },
       onError: (error) {
         if (!mounted) return;
-        _msg(_cleanErrorMessage(error));
+        _msg(error);
       },
     );
   }

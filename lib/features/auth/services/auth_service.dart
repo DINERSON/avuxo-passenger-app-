@@ -1,3 +1,5 @@
+import 'dart:developer' as developer;
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -22,6 +24,23 @@ class AuthService {
     required String fallback,
   }) {
     return _firebaseErrorMessage(error, fallback: fallback);
+  }
+
+  static String _firebaseErrorForDisplay(
+    FirebaseAuthException error, {
+    required String fallback,
+  }) {
+    final friendly = _firebaseErrorMessage(error, fallback: fallback);
+    final code = error.code.trim().isEmpty ? 'unknown' : error.code.trim();
+    final nativeMessage = error.message?.trim();
+
+    if (nativeMessage == null ||
+        nativeMessage.isEmpty ||
+        friendly.toLowerCase() == nativeMessage.toLowerCase()) {
+      return '$friendly\nFirebase: $code';
+    }
+
+    return '$friendly\nFirebase: $code — $nativeMessage';
   }
 
   static String _firebaseErrorMessage(
@@ -67,6 +86,11 @@ class AuthService {
         return 'Essa conta foi desativada.';
       case 'operation-not-allowed':
         return 'Login indisponível no momento.';
+      case 'app-not-authorized':
+      case 'invalid-app-credential':
+      case 'missing-client-identifier':
+      case 'captcha-check-failed':
+        return 'Não foi possível enviar SMS. Verifique a configuração do app e tente novamente.';
       default:
         if (message != null && message.isNotEmpty) {
           final lower = message.toLowerCase();
@@ -204,31 +228,44 @@ class AuthService {
   }
 
   static String normalizeBrazilPhone(String input) {
-    final cleanInput = input.trim();
+    var numbers = input.replaceAll(RegExp(r'[^0-9]'), '');
 
-    if (cleanInput.isEmpty) {
+    if (numbers.startsWith('55') &&
+        (numbers.length == 12 || numbers.length == 13)) {
+      numbers = numbers.substring(2);
+    }
+
+    if ((numbers.length != 10 && numbers.length != 11) ||
+        numbers.startsWith('0') ||
+        numbers.substring(2).startsWith('0')) {
       return '';
     }
 
-    final numbers = cleanInput.replaceAll(RegExp(r'[^0-9]'), '');
+    return '+55$numbers';
+  }
 
-    if (numbers.isEmpty) {
-      return '';
-    }
+  static bool isValidBrazilPhone(String input) {
+    return normalizeBrazilPhone(input).isNotEmpty;
+  }
 
-    if (numbers.startsWith('55') && numbers.length >= 12) {
-      return '+$numbers';
-    }
+  static void _otpLog(String event, [String? firebaseCode]) {
+    final suffix =
+        firebaseCode == null || firebaseCode.isEmpty ? '' : ' ($firebaseCode)';
+    developer.log(
+      '$event$suffix',
+      name: 'avuxo.auth.otp',
+    );
+  }
 
-    if (numbers.length == 10 || numbers.length == 11) {
-      return '+55$numbers';
-    }
-
-    if (cleanInput.startsWith('+') && numbers.length >= 10) {
-      return '+$numbers';
-    }
-
-    return cleanInput;
+  static void _otpFailureLog(
+    String event,
+    FirebaseAuthException error,
+  ) {
+    developer.log(
+      '$event code=${error.code} message=${error.message ?? 'not_provided'}',
+      name: 'avuxo.auth.otp',
+      error: error.code,
+    );
   }
 
   static Future<void> sendPhoneOtp({
@@ -239,11 +276,13 @@ class AuthService {
     final normalizedPhone = normalizeBrazilPhone(phone);
 
     if (normalizedPhone.isEmpty) {
-      onError('Informe um telefone válido.');
+      _otpLog('invalid_phone');
+      onError('Número inválido. Informe DDD e telefone.');
       return;
     }
 
     try {
+      _otpLog('request_started');
       await _auth.verifyPhoneNumber(
         phoneNumber: normalizedPhone,
         timeout: const Duration(seconds: 60),
@@ -252,22 +291,27 @@ class AuthService {
             await _finishPhoneCredential(credential);
             await saveLoginSession();
             await clearPendingName();
+            _otpLog('automatic_verification_completed');
           } on FirebaseAuthException catch (e) {
+            _otpFailureLog('automatic_verification_failed', e);
             onError(
-              _firebaseErrorMessage(
+              _firebaseErrorForDisplay(
                 e,
                 fallback: 'Erro ao validar telefone automaticamente.',
               ),
             );
           } catch (_) {
+            _otpLog('automatic_verification_failed');
             onError('Erro ao validar telefone automaticamente.');
           }
         },
         verificationFailed: (FirebaseAuthException e) {
+          _otpFailureLog('verification_failed', e);
           onError(
-            _firebaseErrorMessage(
+            _firebaseErrorForDisplay(
               e,
-              fallback: 'Erro ao enviar SMS.',
+              fallback:
+                  'Não foi possível enviar SMS. Tente novamente mais tarde.',
             ),
           );
         },
@@ -275,22 +319,28 @@ class AuthService {
           final cleanVerificationId = verificationId.trim();
 
           if (cleanVerificationId.isEmpty) {
+            _otpLog('code_sent_without_verification_id');
             onError('Código de verificação inválido.');
             return;
           }
 
+          _otpLog('code_sent');
           onCodeSent(cleanVerificationId);
         },
-        codeAutoRetrievalTimeout: (String verificationId) {},
+        codeAutoRetrievalTimeout: (String verificationId) {
+          _otpLog('automatic_retrieval_timeout');
+        },
       );
     } on FirebaseAuthException catch (e) {
+      _otpFailureLog('request_exception', e);
       onError(
-        _firebaseErrorMessage(
+        _firebaseErrorForDisplay(
           e,
-          fallback: 'Erro ao enviar código.',
+          fallback: 'Não foi possível enviar SMS. Tente novamente mais tarde.',
         ),
       );
     } catch (e) {
+      _otpLog('request_exception');
       onError(
         _genericOtpErrorMessage(
           e,
