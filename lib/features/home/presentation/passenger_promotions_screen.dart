@@ -76,11 +76,17 @@ class _PassengerPromotionsScreenState
     });
 
     try {
+      final token = await user.getIdToken();
+      if (token == null || token.trim().isEmpty) {
+        throw StateError('Sessão Firebase inválida.');
+      }
+
       final response = await http
           .post(
             Uri.parse('$backendBaseUrl/promotions/raffle/enter'),
             headers: {
               'Content-Type': 'application/json',
+              'Authorization': 'Bearer ${token.trim()}',
             },
             body: jsonEncode({
               'userId': user.uid,

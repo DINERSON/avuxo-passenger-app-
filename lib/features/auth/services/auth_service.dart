@@ -11,9 +11,11 @@ class AuthService {
 
   static const String _isLoggedInKey = 'is_logged_in';
   static const String _uidKey = 'uid';
+  static const String _sessionConfirmedKey = 'auth_session_confirmed';
   static const String _pendingUserNameKey = 'pending_user_name';
   static const String _tooManyOtpRequestsMessage =
       'Muitas tentativas de envio. Aguarde alguns minutos e tente novamente.';
+  static bool _otpRequestInProgress = false;
 
   static User? get currentUser => _auth.currentUser;
 
@@ -159,6 +161,21 @@ class AuthService {
 
     await prefs.setBool(_isLoggedInKey, true);
     await prefs.setString(_uidKey, user.uid);
+    await prefs.setBool(_sessionConfirmedKey, true);
+  }
+
+  static Future<void> savePhoneLoginSession() async {
+    final prefs = await SharedPreferences.getInstance();
+    final user = _auth.currentUser;
+
+    if (user == null || user.phoneNumber?.trim().isEmpty != false) {
+      await clearLoginSession();
+      throw Exception('Telefone ainda não foi confirmado pelo Firebase.');
+    }
+
+    await prefs.setBool(_isLoggedInKey, true);
+    await prefs.setString(_uidKey, user.uid);
+    await prefs.setBool(_sessionConfirmedKey, true);
   }
 
   static Future<void> clearLoginSession() async {
@@ -167,6 +184,7 @@ class AuthService {
     await Future.wait([
       prefs.remove(_isLoggedInKey),
       prefs.remove(_uidKey),
+      prefs.remove(_sessionConfirmedKey),
     ]);
   }
 
@@ -175,6 +193,7 @@ class AuthService {
 
     final localSession = prefs.getBool(_isLoggedInKey) ?? false;
     final uid = prefs.getString(_uidKey)?.trim();
+    final sessionConfirmed = prefs.getBool(_sessionConfirmedKey) ?? false;
     final firebaseUser = _auth.currentUser;
 
     if (!localSession) {
@@ -193,6 +212,13 @@ class AuthService {
 
     if (firebaseUser.uid != uid) {
       await clearLoginSession();
+      return false;
+    }
+
+    if (!sessionConfirmed) {
+      await clearLoginSession();
+      await _auth.signOut();
+      _otpLog('startup_rejected incomplete_session');
       return false;
     }
 
@@ -273,6 +299,12 @@ class AuthService {
     required void Function(String verificationId) onCodeSent,
     required void Function(String error) onError,
   }) async {
+    if (_otpRequestInProgress) {
+      _otpLog('request_ignored already_in_progress=true');
+      onError('Aguarde antes de pedir outro código.');
+      return;
+    }
+
     final normalizedPhone = normalizeBrazilPhone(phone);
 
     if (normalizedPhone.isEmpty) {
@@ -281,31 +313,21 @@ class AuthService {
       return;
     }
 
+    _otpRequestInProgress = true;
+
     try {
       _otpLog('request_started');
       await _auth.verifyPhoneNumber(
         phoneNumber: normalizedPhone,
         timeout: const Duration(seconds: 60),
-        verificationCompleted: (PhoneAuthCredential credential) async {
-          try {
-            await _finishPhoneCredential(credential);
-            await saveLoginSession();
-            await clearPendingName();
-            _otpLog('automatic_verification_completed');
-          } on FirebaseAuthException catch (e) {
-            _otpFailureLog('automatic_verification_failed', e);
-            onError(
-              _firebaseErrorForDisplay(
-                e,
-                fallback: 'Erro ao validar telefone automaticamente.',
-              ),
-            );
-          } catch (_) {
-            _otpLog('automatic_verification_failed');
-            onError('Erro ao validar telefone automaticamente.');
-          }
+        verificationCompleted: (PhoneAuthCredential credential) {
+          _otpLog(
+            'automatic_verification_ignored '
+            'manual_confirmation_required=true',
+          );
         },
         verificationFailed: (FirebaseAuthException e) {
+          _otpRequestInProgress = false;
           _otpFailureLog('verification_failed', e);
           onError(
             _firebaseErrorForDisplay(
@@ -316,6 +338,7 @@ class AuthService {
           );
         },
         codeSent: (String verificationId, int? resendToken) {
+          _otpRequestInProgress = false;
           final cleanVerificationId = verificationId.trim();
 
           if (cleanVerificationId.isEmpty) {
@@ -328,10 +351,12 @@ class AuthService {
           onCodeSent(cleanVerificationId);
         },
         codeAutoRetrievalTimeout: (String verificationId) {
+          _otpRequestInProgress = false;
           _otpLog('automatic_retrieval_timeout');
         },
       );
     } on FirebaseAuthException catch (e) {
+      _otpRequestInProgress = false;
       _otpFailureLog('request_exception', e);
       onError(
         _firebaseErrorForDisplay(
@@ -340,6 +365,7 @@ class AuthService {
         ),
       );
     } catch (e) {
+      _otpRequestInProgress = false;
       _otpLog('request_exception');
       onError(
         _genericOtpErrorMessage(
@@ -387,10 +413,9 @@ class AuthService {
       );
 
       await _finishPhoneCredential(credential);
-      await saveLoginSession();
-      await clearPendingName();
       _otpLog('confirm_completed auth=firebase');
     } on FirebaseAuthException catch (e) {
+      await clearLoginSession();
       _otpFailureLog('confirm_failed', e);
       throw Exception(
         _firebaseErrorForDisplay(

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:dio/dio.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 
 class ApiClient {
@@ -50,7 +51,14 @@ class ApiClient {
 
     _dio.interceptors.add(
       InterceptorsWrapper(
-        onRequest: (options, handler) {
+        onRequest: (options, handler) async {
+          final firebaseToken =
+              await FirebaseAuth.instance.currentUser?.getIdToken();
+          if (firebaseToken != null && firebaseToken.trim().isNotEmpty) {
+            options.headers['Authorization'] =
+                'Bearer ${firebaseToken.trim()}';
+          }
+
           if (kDebugMode) {
             debugPrint('');
             debugPrint('🚀 PASSENGER REQUEST');

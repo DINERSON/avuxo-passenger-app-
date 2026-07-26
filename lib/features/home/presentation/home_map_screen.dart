@@ -182,13 +182,17 @@ class _HomeMapScreenState extends ConsumerState<HomeMapScreen> {
     }
   }
 
-  void _connectSocket() {
-    socketService.connect(
+  Future<void> _connectSocket() async {
+    try {
+      await socketService.connect(
       passengerId: passengerId,
       onRideData: _handleRideData,
       onDriverLocation: _handleDriverLocation,
       onChatUpdated: _handleChatData,
     );
+    } catch (error) {
+      debugPrint('Passenger socket authentication failed: $error');
+    }
   }
 
   void _joinCurrentRideRoom(String rideId) {
@@ -921,11 +925,22 @@ class _HomeMapScreenState extends ConsumerState<HomeMapScreen> {
     _showCenterNotification(message);
   }
 
-  void _submitReview(
+  Future<void> _submitReview(
     double rating,
     String comment,
-  ) {
+  ) async {
     controller.rating = rating;
+
+    final rideId = currentRideId;
+    if (rideId == null ||
+        !await rideService.submitReview(
+          rideId: rideId,
+          rating: rating,
+          comment: comment,
+        )) {
+      _showCenterNotification('Não foi possível salvar a avaliação.');
+      return;
+    }
 
     _resetRide(
       'Obrigado pela avaliação!',

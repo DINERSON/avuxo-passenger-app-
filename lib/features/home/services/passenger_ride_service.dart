@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:http/http.dart' as http;
 
 class PassengerRideService {
@@ -8,6 +9,19 @@ class PassengerRideService {
   });
 
   final String baseUrl;
+
+  Future<Map<String, String>> _headers() async {
+    final token = await FirebaseAuth.instance.currentUser?.getIdToken();
+
+    if (token == null || token.trim().isEmpty) {
+      throw StateError('Sessão Firebase inválida.');
+    }
+
+    return {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ${token.trim()}',
+    };
+  }
 
   Map<String, dynamic>? _decodeMap(String body) {
     try {
@@ -34,9 +48,7 @@ class PassengerRideService {
       final response = await http
           .post(
             Uri.parse('$baseUrl/ride/request'),
-            headers: {
-              'Content-Type': 'application/json',
-            },
+            headers: await _headers(),
             body: jsonEncode(body),
           )
           .timeout(
@@ -77,9 +89,7 @@ class PassengerRideService {
       final response = await http
           .get(
             uri,
-            headers: {
-              'Content-Type': 'application/json',
-            },
+            headers: await _headers(),
           )
           .timeout(
             const Duration(seconds: 7),
@@ -119,9 +129,7 @@ class PassengerRideService {
       final response = await http
           .post(
             Uri.parse('$baseUrl/ride/cancel'),
-            headers: {
-              'Content-Type': 'application/json',
-            },
+            headers: await _headers(),
             body: jsonEncode({
               'rideId': id,
               'id': id,
@@ -155,9 +163,7 @@ class PassengerRideService {
       final response = await http
           .post(
             Uri.parse('$baseUrl/chat/send'),
-            headers: {
-              'Content-Type': 'application/json',
-            },
+            headers: await _headers(),
             body: jsonEncode({
               'rideId': id,
               'sender': 'passenger',
@@ -199,9 +205,7 @@ class PassengerRideService {
       final response = await http
           .get(
             uri,
-            headers: {
-              'Content-Type': 'application/json',
-            },
+            headers: await _headers(),
           )
           .timeout(
             const Duration(seconds: 8),
@@ -243,9 +247,7 @@ class PassengerRideService {
       final response = await http
           .get(
             uri,
-            headers: {
-              'Content-Type': 'application/json',
-            },
+            headers: await _headers(),
           )
           .timeout(
             const Duration(seconds: 8),
@@ -273,6 +275,32 @@ class PassengerRideService {
           .toList();
     } catch (_) {
       return [];
+    }
+  }
+
+  Future<bool> submitReview({
+    required String rideId,
+    required double rating,
+    required String comment,
+  }) async {
+    final id = rideId.trim();
+    if (id.isEmpty || rating < 1 || rating > 5) return false;
+
+    try {
+      final response = await http
+          .post(
+            Uri.parse('$baseUrl/ride/review'),
+            headers: await _headers(),
+            body: jsonEncode({
+              'rideId': id,
+              'rating': rating,
+              'comment': comment.trim(),
+            }),
+          )
+          .timeout(const Duration(seconds: 8));
+      return response.statusCode >= 200 && response.statusCode < 300;
+    } catch (_) {
+      return false;
     }
   }
 }

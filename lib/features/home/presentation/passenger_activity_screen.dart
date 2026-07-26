@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
@@ -37,11 +38,17 @@ class _PassengerActivityScreenState extends State<PassengerActivityScreen> {
     });
 
     try {
+      final token = await FirebaseAuth.instance.currentUser?.getIdToken();
+      if (token == null || token.trim().isEmpty) {
+        throw StateError('Sessão Firebase inválida.');
+      }
+
       final response = await http
           .get(
             Uri.parse('$backendBaseUrl/ride/history'),
             headers: {
               'Content-Type': 'application/json',
+              'Authorization': 'Bearer ${token.trim()}',
             },
           )
           .timeout(

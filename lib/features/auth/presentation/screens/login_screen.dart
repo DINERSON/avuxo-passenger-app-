@@ -134,7 +134,7 @@ class _LoginScreenState extends State<LoginScreen> {
           if (!mounted) return;
 
           _msg('Código enviado.');
-          Navigator.pushReplacement(
+          Navigator.push(
             context,
             MaterialPageRoute(
               builder: (_) => OtpScreen(
@@ -607,13 +607,29 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                           child: Center(
                             child: loadingPhone
-                                ? const SizedBox(
-                                    width: 23,
-                                    height: 23,
-                                    child: CircularProgressIndicator(
-                                      color: Colors.black,
-                                      strokeWidth: 2.6,
-                                    ),
+                                ? Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(
+                                          color: Colors.black,
+                                          strokeWidth: 2.4,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Text(
+                                        useEmailLogin
+                                            ? 'Entrando...'
+                                            : 'Enviando código...',
+                                        style: const TextStyle(
+                                          color: Colors.black,
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w900,
+                                        ),
+                                      ),
+                                    ],
                                   )
                                 : const Text(
                                     'ENTRAR',

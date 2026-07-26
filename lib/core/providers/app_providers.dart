@@ -116,10 +116,14 @@ class AuthNotifier extends StateNotifier<AuthState> {
       final storage = _ref.read(localStorageProvider);
       final user = await storage.getUser();
       final token = await storage.getToken();
+      final firebaseSessionValid = await AuthService.hasSavedSession();
 
       if (!mounted) return;
 
-      if (user != null && token != null && token.isNotEmpty) {
+      if (firebaseSessionValid &&
+          user != null &&
+          token != null &&
+          token.isNotEmpty) {
         _ref.read(apiClientProvider).setToken(token);
         state = state.copyWith(
           user: user,
@@ -298,6 +302,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
       _ref.read(apiClientProvider).setToken(result.$1);
       await _ref.read(localStorageProvider).saveAuth(result.$1, result.$2);
+      await AuthService.savePhoneLoginSession();
+      await AuthService.clearPendingName();
 
       if (!mounted) return;
 
@@ -308,6 +314,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
         clearError: true,
       );
     } catch (e) {
+      _ref.read(apiClientProvider).setToken(null);
+      await _ref.read(localStorageProvider).clearAuth();
+      await AuthService.clearLoginSession();
       if (!mounted) return;
 
       state = state.copyWith(

@@ -167,16 +167,22 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
 
     ref.read(apiClientProvider).setToken(result.$1);
     await ref.read(localStorageProvider).saveAuth(result.$1, result.$2);
+    await AuthService.savePhoneLoginSession();
+    await AuthService.clearPendingName();
 
     if (!mounted) return;
 
-    Navigator.pushReplacement(
+    Navigator.pushAndRemoveUntil(
       context,
       MaterialPageRoute(
         builder: (_) => const TutorialScreen(),
       ),
+      (_) => false,
     );
   } catch (e) {
+    ref.read(apiClientProvider).setToken(null);
+    await ref.read(localStorageProvider).clearAuth();
+    await AuthService.clearLoginSession();
     if (!mounted) return;
     _msg(_cleanErrorMessage(e));
   } finally {
@@ -200,6 +206,7 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
 
     setState(() {
       resending = true;
+      verificationId = '';
     });
 
     try {
@@ -237,9 +244,17 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
     }
   }
 
-  void _goBack() {
+  Future<void> _goBack() async {
     if (loading || resending || !mounted) return;
-    Navigator.pop(context);
+
+    verificationId = '';
+    codeCtrl.clear();
+    ref.read(apiClientProvider).setToken(null);
+    await ref.read(localStorageProvider).clearAuth();
+    await AuthService.clearLoginSession();
+
+    if (!mounted) return;
+    Navigator.of(context).pop();
   }
 
   @override
@@ -261,10 +276,21 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
       ),
     );
 
-    return Scaffold(
-      backgroundColor: Colors.black,
-      resizeToAvoidBottomInset: true,
-      body: Stack(
+    return PopScope(
+      canPop: !loading && !resending,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) return;
+
+        verificationId = '';
+        codeCtrl.clear();
+        ref.read(apiClientProvider).setToken(null);
+        unawaited(ref.read(localStorageProvider).clearAuth());
+        unawaited(AuthService.clearLoginSession());
+      },
+      child: Scaffold(
+        backgroundColor: Colors.black,
+        resizeToAvoidBottomInset: true,
+        body: Stack(
         children: [
           Positioned.fill(
             child: Container(
@@ -434,6 +460,7 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
             ),
           ),
         ],
+        ),
       ),
     );
   }

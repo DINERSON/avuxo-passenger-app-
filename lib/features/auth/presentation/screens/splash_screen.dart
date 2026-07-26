@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../home/presentation/home_shell.dart';
+import '../../../../core/storage/local_storage.dart';
 import '../../services/auth_service.dart';
 import 'welcome_screen.dart';
 
@@ -54,6 +55,10 @@ class _SplashScreenState extends State<SplashScreen>
 
     try {
       final saved = await AuthService.hasSavedSession();
+
+      if (!saved) {
+        await LocalStorage().clearAuth();
+      }
 
       await Future.delayed(
         const Duration(milliseconds: 2200),

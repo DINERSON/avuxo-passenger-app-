@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:http/http.dart' as http;
 
 class PassengerChatService {
@@ -8,6 +9,17 @@ class PassengerChatService {
   });
 
   final String baseUrl;
+
+  Future<Map<String, String>> _headers() async {
+    final token = await FirebaseAuth.instance.currentUser?.getIdToken();
+    if (token == null || token.trim().isEmpty) {
+      throw StateError('Sessão Firebase inválida.');
+    }
+    return {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ${token.trim()}',
+    };
+  }
 
   Future<List<Map<String, dynamic>>> loadChat({
     String? rideId,
@@ -26,9 +38,7 @@ class PassengerChatService {
       final response = await http
           .get(
             uri,
-            headers: {
-              'Content-Type': 'application/json',
-            },
+            headers: await _headers(),
           )
           .timeout(
             const Duration(seconds: 8),
@@ -87,9 +97,7 @@ class PassengerChatService {
       final response = await http
           .post(
             Uri.parse('$baseUrl/chat/send'),
-            headers: {
-              'Content-Type': 'application/json',
-            },
+            headers: await _headers(),
             body: jsonEncode({
               'rideId': cleanRideId,
               'sender': 'passenger',

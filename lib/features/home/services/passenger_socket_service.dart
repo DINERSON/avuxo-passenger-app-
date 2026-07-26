@@ -1,4 +1,5 @@
 import 'package:socket_io_client/socket_io_client.dart' as io;
+import 'package:firebase_auth/firebase_auth.dart';
 
 class PassengerSocketService {
   PassengerSocketService({
@@ -116,13 +117,18 @@ class PassengerSocketService {
     return ridePassengerId.toString().trim() == passengerId;
   }
 
-  void connect({
+  Future<void> connect({
     required void Function(dynamic data) onRideData,
     required void Function(dynamic data) onDriverLocation,
     required void Function(dynamic data) onChatUpdated,
     String passengerId = 'passenger-avuxo',
-  }) {
+  }) async {
     _passengerId = passengerId.trim();
+    final token = await FirebaseAuth.instance.currentUser?.getIdToken();
+
+    if (token == null || token.trim().isEmpty) {
+      throw StateError('Sessão Firebase inválida para Socket.IO.');
+    }
 
     _socket?.clearListeners();
     _socket?.disconnect();
@@ -132,6 +138,7 @@ class PassengerSocketService {
       baseUrl,
       io.OptionBuilder()
           .setTransports(['websocket', 'polling'])
+          .setAuth({'token': token.trim()})
           .enableForceNew()
           .enableReconnection()
           .setReconnectionAttempts(999)
