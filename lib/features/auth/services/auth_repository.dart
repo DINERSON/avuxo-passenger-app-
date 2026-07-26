@@ -11,69 +11,6 @@ class AuthRepository {
 
   final Dio _api;
 
-  Map<String, dynamic>? _decodeMap(dynamic data) {
-    if (data is Map<String, dynamic>) {
-      return data;
-    }
-
-    if (data is Map) {
-      return Map<String, dynamic>.from(data);
-    }
-
-    return null;
-  }
-
-  String? _extractToken(Map<String, dynamic> data) {
-    final directToken = data['token'] ??
-        data['accessToken'] ??
-        data['jwt'] ??
-        data['authToken'];
-
-    if (directToken != null && directToken.toString().trim().isNotEmpty) {
-      return directToken.toString().trim();
-    }
-
-    final nestedData = _decodeMap(data['data']);
-    if (nestedData != null) {
-      final nestedToken = nestedData['token'] ??
-          nestedData['accessToken'] ??
-          nestedData['jwt'] ??
-          nestedData['authToken'];
-
-      if (nestedToken != null && nestedToken.toString().trim().isNotEmpty) {
-        return nestedToken.toString().trim();
-      }
-    }
-
-    return null;
-  }
-
-  Map<String, dynamic>? _extractUserMap(Map<String, dynamic> data) {
-    final user = _decodeMap(data['user']);
-    if (user != null) {
-      return user;
-    }
-
-    final passenger = _decodeMap(data['passenger']);
-    if (passenger != null) {
-      return passenger;
-    }
-
-    final profile = _decodeMap(data['profile']);
-    if (profile != null) {
-      return profile;
-    }
-
-    final nestedData = _decodeMap(data['data']);
-    if (nestedData != null) {
-      return _decodeMap(nestedData['user']) ??
-          _decodeMap(nestedData['passenger']) ??
-          _decodeMap(nestedData['profile']);
-    }
-
-    return null;
-  }
-
   UserProfile _buildFallbackUser({
     required String uid,
     required String phone,
@@ -87,40 +24,6 @@ class AuthRepository {
       email: email?.trim().isNotEmpty == true ? email!.trim() : null,
       role: 'passenger',
     );
-  }
-
-  UserProfile _buildUserFromBackendOrFallback({
-    required Map<String, dynamic> backendData,
-    required String uid,
-    required String phone,
-    String? name,
-    String? email,
-  }) {
-    final userMap = _extractUserMap(backendData);
-
-    if (userMap == null) {
-      return _buildFallbackUser(
-        uid: uid,
-        phone: phone,
-        name: name,
-        email: email,
-      );
-    }
-
-    final fixedUserMap = Map<String, dynamic>.from(userMap);
-
-    fixedUserMap['id'] = fixedUserMap['id'] ??
-        fixedUserMap['_id'] ??
-        fixedUserMap['uid'] ??
-        fixedUserMap['firebaseUid'] ??
-        uid;
-
-    fixedUserMap['name'] = fixedUserMap['name'] ?? name ?? 'Passageiro';
-    fixedUserMap['phone'] = fixedUserMap['phone'] ?? phone;
-    fixedUserMap['email'] = fixedUserMap['email'] ?? email;
-    fixedUserMap['role'] = fixedUserMap['role'] ?? 'passenger';
-
-    return UserProfile.fromJson(fixedUserMap);
   }
 
   Future<void> registerPassenger({
@@ -183,15 +86,15 @@ class AuthRepository {
     required String phone,
   }) async {
     final cleanVerificationId = verificationId.trim();
-    final cleanOtp = otp.trim();
+    final cleanOtp = otp.replaceAll(RegExp(r'\s+'), '');
     final normalizedPhone = AuthService.normalizeBrazilPhone(phone);
 
     if (cleanVerificationId.isEmpty) {
       throw Exception('Envie o código novamente.');
     }
 
-    if (cleanOtp.isEmpty) {
-      throw Exception('Informe o código recebido.');
+    if (!RegExp(r'^\d{6}$').hasMatch(cleanOtp)) {
+      throw Exception('Código inválido. Digite os 6 números recebidos.');
     }
 
     if (normalizedPhone.trim().isEmpty) {
@@ -216,28 +119,10 @@ class AuthRepository {
       throw Exception('Token Firebase não recebido.');
     }
 
-    final response = await safePost(
-      _api,
-      '/auth/verify-otp',
-      data: {
-        'phone': normalizedPhone,
-        'otp': cleanOtp,
-        'role': 'passenger',
-        'firebaseUid': firebaseUser.uid,
-        'firebaseToken': firebaseToken,
-      },
-    );
-
-    final backendData = _decodeMap(response.data) ?? <String, dynamic>{};
-
-    final backendToken = _extractToken(backendData);
-
-    final tokenToUse = backendToken?.trim().isNotEmpty == true
-        ? backendToken!.trim()
-        : firebaseToken.trim();
-
-    final user = _buildUserFromBackendOrFallback(
-      backendData: backendData,
+    // O SMS foi emitido pelo Firebase; portanto, o código só pode ser
+    // validado pelo Firebase. A sessão usa o ID token confirmado acima e não
+    // envia o mesmo OTP para o fluxo legado do backend.
+    final user = _buildFallbackUser(
       uid: firebaseUser.uid,
       phone: firebaseUser.phoneNumber?.trim().isNotEmpty == true
           ? firebaseUser.phoneNumber!.trim()
@@ -246,7 +131,7 @@ class AuthRepository {
       email: firebaseUser.email,
     );
 
-    return (tokenToUse, user);
+    return (firebaseToken.trim(), user);
   }
 
   Future<void> signOut() async {

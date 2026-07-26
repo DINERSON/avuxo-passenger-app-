@@ -258,7 +258,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
   Future<void> verifyOtp(String otp) async {
     final verificationId = state.verificationId;
     final phone = state.phoneDraft;
-    final cleanOtp = otp.trim();
+    final cleanOtp = otp.replaceAll(RegExp(r'\s+'), '');
 
     if (verificationId == null || verificationId.isEmpty) {
       state = state.copyWith(
@@ -276,10 +276,10 @@ class AuthNotifier extends StateNotifier<AuthState> {
       return;
     }
 
-    if (cleanOtp.isEmpty) {
+    if (!RegExp(r'^\d{6}$').hasMatch(cleanOtp)) {
       state = state.copyWith(
         loading: false,
-        error: 'Informe o código recebido.',
+        error: 'Código inválido. Digite os 6 números recebidos.',
       );
       return;
     }

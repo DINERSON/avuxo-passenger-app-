@@ -356,15 +356,20 @@ class AuthService {
     required String phone,
   }) async {
     final cleanVerificationId = verificationId.trim();
-    final cleanSmsCode = smsCode.trim();
+    final cleanSmsCode = smsCode.replaceAll(RegExp(r'\s+'), '');
     final normalizedPhone = normalizeBrazilPhone(phone);
 
     if (cleanVerificationId.isEmpty) {
+      _otpLog('confirm_blocked verification_id_present=false auth=firebase');
       throw Exception('Envie o código novamente.');
     }
 
-    if (cleanSmsCode.isEmpty) {
-      throw Exception('Informe o código recebido.');
+    if (!RegExp(r'^\d{6}$').hasMatch(cleanSmsCode)) {
+      _otpLog(
+        'confirm_blocked verification_id_present=true '
+        'code_length=${cleanSmsCode.length} auth=firebase',
+      );
+      throw Exception('Código inválido. Digite os 6 números recebidos.');
     }
 
     if (normalizedPhone.isEmpty) {
@@ -372,6 +377,10 @@ class AuthService {
     }
 
     try {
+      _otpLog(
+        'confirm_started verification_id_present=true '
+        'code_length=${cleanSmsCode.length} auth=firebase',
+      );
       final credential = PhoneAuthProvider.credential(
         verificationId: cleanVerificationId,
         smsCode: cleanSmsCode,
@@ -380,11 +389,14 @@ class AuthService {
       await _finishPhoneCredential(credential);
       await saveLoginSession();
       await clearPendingName();
+      _otpLog('confirm_completed auth=firebase');
     } on FirebaseAuthException catch (e) {
+      _otpFailureLog('confirm_failed', e);
       throw Exception(
-        _firebaseErrorMessage(
+        _firebaseErrorForDisplay(
           e,
-          fallback: 'Erro ao confirmar código.',
+          fallback:
+              'Erro de autenticação Firebase. Tente reenviar o código.',
         ),
       );
     }
@@ -397,6 +409,7 @@ class AuthService {
 
     if (current != null) {
       try {
+        _otpLog('credential_mode=link auth=firebase');
         await current.linkWithCredential(credential);
         await current.reload();
         return;
@@ -408,6 +421,7 @@ class AuthService {
 
         if (e.code == 'credential-already-in-use' ||
             e.code == 'email-already-in-use') {
+          _otpLog('credential_mode=sign_in auth=firebase');
           await _auth.signInWithCredential(credential);
           return;
         }
@@ -416,6 +430,7 @@ class AuthService {
       }
     }
 
+    _otpLog('credential_mode=sign_in auth=firebase');
     await _auth.signInWithCredential(credential);
   }
 

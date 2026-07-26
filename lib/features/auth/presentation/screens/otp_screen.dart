@@ -133,10 +133,10 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
  Future<void> _verify() async {
   if (loading || resending) return;
 
-  final code = codeCtrl.text.trim();
+  final code = codeCtrl.text.replaceAll(RegExp(r'\s+'), '');
 
-  if (code.length < 6) {
-    _msg('Digite o código completo.');
+  if (!RegExp(r'^\d{6}$').hasMatch(code)) {
+    _msg('Código inválido. Digite os 6 números recebidos.');
     return;
   }
 
